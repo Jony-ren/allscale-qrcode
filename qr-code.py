@@ -1,142 +1,187 @@
 import streamlit as st
-from PIL import Image
 import qrcode
+from PIL import Image, ImageColor
 import io
 
-# --- Page Configuration ---
-st.set_page_config(page_title="PosterQR Pro", layout="wide", page_icon="🎨")
+# --- Page Configuration (OpenAI-like Minimalist Design) ---
+st.set_page_config(
+    page_title="QR Studio",
+    page_icon="🎨",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- Custom CSS to make it look nicer ---
+# --- Custom CSS for Light Mode & OpenAI Design Language ---
 st.markdown("""
-<style>
-    .stApp {
-        background-color: #ffffff;
-    }
-    .main .block-container {
-        padding-top: 2rem;
-    }
-</style>
+    <style>
+        /* General Font and Background */
+        .stApp {
+            font-family: 'Söhne', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background-color: #FFFFFF;
+            color: #000000;
+        }
+        
+        /* Headers */
+        h1, h2, h3 {
+            font-weight: 600;
+            color: #202123;
+        }
+        
+        /* Buttons - OpenAI Green/Black Style */
+        .stButton > button {
+            background-color: #10a37f;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .stButton > button:hover {
+            background-color: #0d8a6a;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        /* Inputs */
+        .stTextInput > div > div > input {
+            background-color: #FFFFFF;
+            border: 1px solid #e5e5e5;
+            color: #000000;
+            border-radius: 4px;
+        }
+        
+        /* Remove Streamlit branding */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        
+        /* Canvas Container */
+        .css-1544g2n {
+            padding: 2rem;
+            background-color: #f7f7f8;
+            border-radius: 8px;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
-# --- Logic Functions ---
-
-def hex_to_rgb(hex_color):
-    """Convert hex string to RGB tuple"""
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-def generate_qr_image(content, fg_color, bg_color, size_px):
-    """Generate a high-res QR code image"""
+def create_qr_code(url, fill_color, back_color="transparent"):
+    """Generates a QR code image with transparent background."""
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
         box_size=10,
-        border=1,
+        border=1, # Minimal border
     )
-    qr.add_data(content)
+    qr.add_data(url)
     qr.make(fit=True)
 
-    # Convert colors
-    fg_rgb = hex_to_rgb(fg_color)
-    bg_rgb = hex_to_rgb(bg_color)
+    if back_color == "transparent":
+        # Generate with white background first, then convert to transparent
+        img = qr.make_image(fill_color=fill_color, back_color="white").convert("RGBA")
+        datas = img.getdata()
+        newData = []
+        for item in datas:
+            # If the pixel is white (background), make it transparent
+            if item[0] == 255 and item[1] == 255 and item[2] == 255:
+                newData.append((255, 255, 255, 0))
+            else:
+                newData.append(item)
+        img.putdata(newData)
+        return img
+    else:
+        return qr.make_image(fill_color=fill_color, back_color=back_color).convert("RGBA")
 
-    img_qr = qr.make_image(fill_color=fg_rgb, back_color=bg_rgb).convert("RGBA")
-    
-    # Resize to target size
-    img_qr = img_qr.resize((size_px, size_px), Image.Resampling.LANCZOS)
-    
-    # Add padding container (matching the style of previous versions)
-    padding = int(size_px * 0.05) # 5% padding
-    final_size = size_px + (padding * 2)
-    
-    bg_square = Image.new("RGBA", (final_size, final_size), bg_rgb)
-    bg_square.paste(img_qr, (padding, padding), img_qr)
-    
-    return bg_square
+def main():
+    # --- Sidebar Controls ---
+    with st.sidebar:
+        st.title("Settings")
+        st.markdown("---")
+        
+        # 1. Content Input
+        st.subheader("1. Content")
+        target_url = st.text_input("QR Link URL", value="https://openai.com", help="Enter the website link for the QR code.")
+        
+        # 2. Design Input
+        st.subheader("2. Design")
+        # Default color matches the light green in the provided poster (~#E3FCEF)
+        qr_color = st.color_picker("QR Color", "#E3FCEF") 
+        
+        st.markdown("---")
+        st.subheader("3. Export")
+        st.caption("Adjust the position on the right, then download.")
 
-def compose_image(base_img, url, size_pct, x_pct, y_pct, fg, bg):
-    """Compose the final poster"""
-    working_img = base_img.copy().convert("RGBA")
-    width, height = working_img.size
-    
-    # Calculate Size
-    qr_display_size = int((size_pct / 100) * width)
-    if qr_display_size < 10: qr_display_size = 10
-    
-    qr_img = generate_qr_image(url, fg, bg, qr_display_size)
-    
-    # Calculate Position (Center based)
-    pos_x = int((x_pct / 100) * width) - (qr_img.width // 2)
-    pos_y = int((y_pct / 100) * height) - (qr_img.height // 2)
-    
-    # Compose
-    working_img.paste(qr_img, (pos_x, pos_y), qr_img)
-    
-    return working_img
+    # --- Main Area ---
+    st.title("Poster Editor")
+    st.markdown("Upload your poster, customize the QR code, and download the result.")
 
-# --- UI Layout ---
+    # File Uploader
+    uploaded_file = st.file_uploader("Upload Poster Image", type=['jpg', 'jpeg', 'png'])
 
-st.title("PosterQR Pro")
-st.caption("Upload a poster, replace the QR code, and download in HD.")
-
-col1, col2 = st.columns([1, 2])
-
-with col1:
-    st.subheader("1. Settings")
-    
-    # Upload
-    uploaded_file = st.file_uploader("Upload Base Image", type=['png', 'jpg', 'jpeg'])
-    
-    # Content
-    url_input = st.text_input("QR Content (URL)", value="https://openai.com")
-    
-    st.write("---")
-    st.subheader("2. Style & Position")
-    
-    # Sliders
-    size_val = st.slider("Size (%)", 5.0, 80.0, 25.0, 0.5)
-    x_val = st.slider("Position X (%)", 0.0, 100.0, 50.0, 0.5)
-    y_val = st.slider("Position Y (%)", 0.0, 100.0, 45.0, 0.5)
-    
-    # Colors
-    c1, c2 = st.columns(2)
-    with c1:
-        fg_color = st.color_picker("QR Color", "#E9F6F1")
-    with c2:
-        bg_color = st.color_picker("Background", "#15382C")
-
-with col2:
-    st.subheader("Preview")
-    
     if uploaded_file:
-        # Load Image
-        base_image = Image.open(uploaded_file)
-        
-        # Generate Composition
-        final_img = compose_image(base_image, url_input, size_val, x_val, y_val, fg_color, bg_color)
-        
-        # Display
-        st.image(final_img, use_container_width=True)
-        
-        # Download Button
-        buf = io.BytesIO()
-        final_img.save(buf, format="PNG")
-        byte_im = buf.getvalue()
-        
-        st.download_button(
-            label="Download HD Poster",
-            data=byte_im,
-            file_name="poster_qr_pro.png",
-            mime="image/png",
-            use_container_width=True,
-            type="primary"
-        )
-        
+        # Load Base Image
+        base_image = Image.open(uploaded_file).convert("RGBA")
+        base_w, base_h = base_image.size
+
+        # Layout: Canvas (Left) + Controls (Right)
+        col1, col2 = st.columns([3, 1])
+
+        with col2:
+            st.info("🎨 **Canvas Controls**")
+            st.markdown("Use these sliders to position the QR code.")
+            
+            # Smart defaults: position roughly in the center
+            default_size = int(base_w * 0.3)
+            default_x = int((base_w - default_size) / 2)
+            default_y = int((base_h - default_size) / 2)
+
+            # Sliders for "Drag and Drop" simulation
+            qr_size = st.slider("Size (Scale)", min_value=50, max_value=int(base_w), value=default_size)
+            pos_x = st.slider("Horizontal Position (X)", min_value=0, max_value=base_w, value=default_x)
+            pos_y = st.slider("Vertical Position (Y)", min_value=0, max_value=base_h, value=default_y)
+
+        # Processing
+        if target_url:
+            # 1. Generate QR
+            qr_img = create_qr_code(target_url, qr_color)
+            
+            # 2. Resize QR
+            qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
+            
+            # 3. Composite (Create a copy to not mutate original)
+            final_image = base_image.copy()
+            
+            # Paste QR code onto base image using the QR code itself as a mask (for transparency)
+            final_image.paste(qr_img, (pos_x, pos_y), qr_img)
+
+            # 4. Display
+            with col1:
+                st.image(final_image, caption="Real-time Preview", use_column_width=True)
+
+            # 5. Download Button
+            # Convert to bytes
+            buf = io.BytesIO()
+            final_image.convert("RGB").save(buf, format="JPEG", quality=95)
+            byte_im = buf.getvalue()
+
+            with st.sidebar:
+                st.download_button(
+                    label="Download Final Poster",
+                    data=byte_im,
+                    file_name="poster_with_new_qr.jpg",
+                    mime="image/jpeg"
+                )
     else:
         # Empty State
-        st.info("👈 Please upload an image from the sidebar to start.")
-        st.markdown("""
-        <div style="border: 2px dashed #ccc; border-radius: 10px; padding: 40px; text-align: center; color: #ccc;">
-            Preview Area
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("👆 Please upload a poster image to begin.")
+        # Optional: Show a placeholder or skeleton
+        st.markdown(
+            """
+            <div style="background-color: #f7f7f8; height: 400px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #8e8ea0;">
+                Preview Area
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+
+if __name__ == "__main__":
+    main()
