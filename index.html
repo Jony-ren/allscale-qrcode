@@ -324,7 +324,6 @@
             qrcodeEl.innerHTML = '';
             const url = urlInput.value || 'https://openai.com';
             
-            // Generate High Res QR
             new QRCode(qrcodeEl, {
                 text: url,
                 width: 512,
@@ -334,15 +333,22 @@
                 correctLevel : QRCode.CorrectLevel.H
             });
 
-            // Force styling for responsiveness
+            // Improved image forcing
             setTimeout(() => {
                 const img = qrcodeEl.querySelector('img');
                 if(img) {
+                    // Important for html-to-image to see it
                     img.style.width = '100%';
                     img.style.height = '100%';
-                    img.style.display = 'block';
+                    img.style.display = 'block'; 
+                    img.removeAttribute('style'); // Clear inline styles that might conflict
+                    Object.assign(img.style, {
+                        width: '100%',
+                        height: '100%',
+                        display: 'block'
+                    });
                 }
-            }, 0);
+            }, 50); // Increased timeout slightly to allow DOM insertion
 
             qrWrapper.style.backgroundColor = bgColorInput.value;
         }
@@ -565,7 +571,7 @@
         resizeHandle.addEventListener('touchstart', handleResizeStart, {passive: false});
         window.addEventListener('touchmove', handleResizeMove, {passive: false}); 
 
-        // Download
+     // --- Updated Download Logic ---
         downloadBtn.addEventListener('click', async () => {
             const btnText = document.getElementById('download-text');
             const originalText = btnText.innerText;
@@ -574,13 +580,34 @@
             downloadBtn.disabled = true;
             downloadBtn.classList.add('opacity-70');
 
+            // 1. Hide UI elements visually
+            // We use visibility hidden instead of display none for the handle 
+            // to prevent layout shifts, though display none works here too.
             qrOverlay.style.border = 'none';
-            resizeHandle.style.display = 'none';
+            qrOverlay.classList.remove('group'); // Removes the hover border effect
+            resizeHandle.style.opacity = '0'; 
+
+            // 2. WAIT for the browser to paint these changes
+            await new Promise(resolve => setTimeout(resolve, 100));
 
             try {
+                // 3. WARMUP RENDER (Critical Fix)
+                // We run the function once at low quality and discard the result.
+                // This forces the library to load fonts and images into its cache.
+                await htmlToImage.toPng(canvasWrapper, { 
+                    quality: 0.01, 
+                    pixelRatio: 1,
+                    skipAutoScale: true,
+                    cacheBust: true 
+                });
+
+                // 4. ACTUAL RENDER
                 const dataUrl = await htmlToImage.toPng(canvasWrapper, {
-                    pixelRatio: 3, 
+                    pixelRatio: 3, // High resolution
+                    quality: 1.0,
                     cacheBust: true,
+                    skipAutoScale: true,
+                    backgroundColor: '#ffffff', // Force white background
                 });
 
                 const link = document.createElement('a');
@@ -591,15 +618,19 @@
                 console.error(err);
                 alert('Error generating image. Please ensure you are using a local image file.');
             } finally {
+                // 5. Restore UI
                 btnText.innerText = originalText;
                 downloadBtn.disabled = false;
                 downloadBtn.classList.remove('opacity-70');
+                
                 qrOverlay.style.border = ''; 
-                resizeHandle.style.display = '';
+                qrOverlay.classList.add('group');
+                resizeHandle.style.opacity = '';
             }
         });
 
     </script>
 </body>
 </html>
+
 
